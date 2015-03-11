@@ -1,0 +1,8 @@
+#!/usr/bin/expect
+set timeout 600
+spawn /usr/bin/sudo -Hu nobody /bin/bash -c "cd /tmp && /usr/bin/make-jpkg jre-7u79-linux-x64.tar.gz"
+expect "Is this correct \\\[Y/n\\\]: "
+send "y\r"
+expect "Press \\\[Return\\\] to continue: "
+send "\r"
+expect "The Debian package has been created in the current directory."

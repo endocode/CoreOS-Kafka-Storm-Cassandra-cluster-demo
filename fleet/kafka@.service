@@ -1,0 +1,16 @@
+[Unit]
+Description=kafka
+After=docker.service
+Requires=docker.service
+
+[Service]
+EnvironmentFile=-/etc/environment
+ExecStartPre=-/usr/bin/docker kill %p-%i
+ExecStartPre=-/usr/bin/docker rm %p-%i
+ExecStartPre=/usr/bin/docker pull endocode/%p
+ExecStart=/usr/bin/bash -c "HOST_IP_ADDR=$${COREOS_PUBLIC_IPV4:-$$(hostname -i)} && ZK_LIST=$(/usr/bin/fleetctl list-machines -no-legend=true -fields=ip | /usr/bin/tr '\n' ',') && exec /usr/bin/docker run --rm --name %p-%i -e KAFKA_HEAP_OPTS='-Xmx64M -Xms64M' -e KAFKA_BROKER_ID=%i -e KAFKA_ZOOKEEPER_CONNECT=$ZK_LIST -e KAFKA_ADVERTISED_PORT=9092 -e KAFKA_ADVERTISED_HOST_NAME=$HOST_IP_ADDR -e KAFKA_HOSTNAME=$HOST_IP_ADDR --publish 9092:9092 endocode/%p"
+ExecStop=/usr/bin/docker stop %p-%i
+TimeoutStartSec=900s
+
+[X-Fleet]
+Conflicts=%p@*.service

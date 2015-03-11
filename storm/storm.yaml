@@ -1,0 +1,15 @@
+storm.zookeeper.servers:
+%zk%
+nimbus.host: "%nimbus%"
+drpc.servers:
+  - "%nimbus%"
+drpc.port: 3772
+drpc.invocations.port: 3773
+
+drpc.childopts: "-Xmx64m -Djava.net.preferIPv4Stack=true"
+nimbus.childopts: "-Xmx64m -Djava.net.preferIPv4Stack=true"
+ui.childopts: "-Xmx64m -Djava.net.preferIPv4Stack=true"
+supervisor.childopts: "-Xmx64m -Djava.net.preferIPv4Stack=true"
+worker.childopts: "-Xmx64m -Djava.net.preferIPv4Stack=true"
+logviewer.childopts: "-Xmx64m -Djava.net.preferIPv4Stack=true"
+storm.cluster.mode: "distributed"

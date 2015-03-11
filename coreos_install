@@ -1,0 +1,98 @@
+#!/bin/bash
+
+usage(){
+	echo "Usage: $0 %IP_ADDR% %HOSTNAME% [%PUBKEY%]"
+	exit 1
+}
+
+COREOS_CONF="./coreos.inc"
+
+if [[ -f $COREOS_CONF && -r $COREOS_CONF ]]; then
+	. $COREOS_CONF
+fi
+
+if [ -z $ETCD_TOKEN ]; then
+	ETCD_TOKEN=`curl -s https://discovery.etcd.io/new`
+	echo "ETCD_TOKEN=\"$ETCD_TOKEN\"" >> $COREOS_CONF || (echo "Failed to write $COREOS_CONF file" && exit 1)
+fi
+
+# passwd on coreos root first
+if [ -z "$1" ]; then
+	usage
+fi
+
+if [ -z "$2" ]; then
+	usage
+fi
+
+if [ -z "$3" ]; then
+	if [ -z "$PUBKEY_FILE" ]; then
+		# use default public file
+		PUBKEY_FILE="$HOME/.ssh/id_rsa.pub"
+		DEFINED_PUBKEY_FILE=true
+	fi
+	if [[ ! $PUBKEY_FILE =~ ^.*\.pub$ ]]; then
+		echo "It seems $PUBKEY_FILE is private key. Please provide public key!" && exit 1
+	fi
+	if ssh-keygen -l -f ${PUBKEY_FILE} > /dev/null 2>&1; then
+		PUBKEY=`cat $PUBKEY_FILE`
+		if [ $DEFINED_PUBKEY_FILE ]; then
+			echo "PUBKEY_FILE=\"$PUBKEY_FILE\"" >> $COREOS_CONF || (echo "Failed to write $COREOS_CONF file" && exit 1)
+		fi
+	else
+		echo "Invalid public key!"
+		exit 1
+	fi
+elif [ -f "$3" ]; then
+	if [[ ! $3 =~ ^.*\.pub$ ]]; then
+		echo "It seems $3 is private key. Please provide public key!" && exit 1
+	fi
+	if ssh-keygen -l -f $3; then
+		PUBKEY=`cat $3`
+		echo "PUBKEY_FILE=\"$3\"" >> $COREOS_CONF || (echo "Failed to write $COREOS_CONF file" && exit 1)
+	else
+		echo "Public key $3 not found!"
+		exit 1
+	fi
+else
+	echo "Default public key $PUBKEY_FILE not found!"
+	exit 1
+fi
+
+IP_ADDR="$1"
+HOSTNAME="$2"
+
+if [[ $HOSTNAME =~ ^.*([0-9]+)$ ]]; then
+	ZOOKEEPER_ID=${BASH_REMATCH[1]}
+fi
+
+CLOUD_CONFIG="#cloud-config
+ssh_authorized_keys:
+  - $PUBKEY
+hostname: $HOSTNAME
+coreos:
+  units:
+    - name: etcd.service
+      command: start
+    - name: fleet.service
+      command: start
+    - name: flanneld.service
+      drop-ins:
+        - name: 50-network-config.conf
+          content: |
+            [Service]
+            ExecStartPre=/usr/bin/etcdctl set /coreos.com/network/config '{ \\\"Network\\\": \\\"10.1.0.0/16\\\" }'
+      command: start
+  etcd:
+    name: $HOSTNAME
+    discovery: $ETCD_TOKEN
+    addr: $IP_ADDR:4001
+    peer-addr: $IP_ADDR:7001
+  fleet:
+    public-ip: $IP_ADDR
+    metadata: zookeeperid=$ZOOKEEPER_ID
+"
+
+ssh -oPasswordAuthentication=yes -o PreferredAuthentications=password -o PubkeyAuthentication=no -o UserKnownHostsFile=$HOME/.ssh/known_hosts.coreos_livecd root@$IP_ADDR "echo \"$CLOUD_CONFIG\" > \$HOME/cloud-config.yaml && (coreos-install -d /dev/vda -c ~/cloud-config.yaml || coreos-install -d /dev/sda -c ~/cloud-config.yaml) && halt -p"
+
+echo "$IP_ADDR $HOSTNAME" >> ./hosts

@@ -1,0 +1,78 @@
+#!/bin/bash
+
+usage(){
+	echo "Usage: $0 %IP_ADDR% [%PUBKEY%]"
+	exit 1
+}
+
+COREOS_CONF="./coreos.inc"
+
+if [[ -f $COREOS_CONF && -r $COREOS_CONF ]]; then
+	. $COREOS_CONF
+fi
+
+if [ -z $ETCD_TOKEN ]; then
+	echo "ETCD_TOKEN is empty"
+	exit 1
+fi
+
+# passwd on coreos root first
+if [ -z "$1" ]; then
+	usage
+fi
+
+if [ -z "$2" ]; then
+	if ssh-keygen -l -f ${PUBKEY_FILE}; then
+		PUBKEY=`cat $PUBKEY_FILE`
+	else
+		echo "Invalid public key!"
+		exit 1
+	fi
+elif [ -f "$2" ]; then
+	if ssh-keygen -l -f $2; then
+		PUBKEY=`cat $2`
+	else
+		echo "Public key $2 not found!"
+		exit 1
+	fi
+else
+	echo "Default public key $PUBKEY_FILE not found!"
+	exit 1
+fi
+
+IP_ADDR="$1"
+
+HOSTNAME=`ssh core@$IP_ADDR "hostname"`
+
+if [[ $HOSTNAME =~ ^.*([0-9]+)$ ]]; then
+        ZOOKEEPER_ID=${BASH_REMATCH[1]}
+fi
+
+CLOUD_CONFIG="#cloud-config
+ssh_authorized_keys:
+  - $PUBKEY
+hostname: $HOSTNAME
+coreos:
+  units:
+    - name: etcd.service
+      command: start
+    - name: fleet.service
+      command: start
+    - name: flanneld.service
+      drop-ins:
+        - name: 50-network-config.conf
+          content: |
+            [Service]
+            ExecStartPre=/usr/bin/etcdctl set /coreos.com/network/config '{ \\\"Network\\\": \\\"10.1.0.0/16\\\" }'
+      command: start
+  etcd:
+    name: $HOSTNAME
+    discovery: $ETCD_TOKEN
+    addr: $IP_ADDR:4001
+    peer-addr: $IP_ADDR:7001
+  fleet:
+    public-ip: $IP_ADDR
+    metadata: zookeeperid=$ZOOKEEPER_ID
+"
+
+ssh core@$IP_ADDR "echo \"$CLOUD_CONFIG\" > \$HOME/cloud-config.yaml && sudo cp \$HOME/cloud-config.yaml /var/lib/coreos-install/user_data && sudo coreos-cloudinit --from-file=/var/lib/coreos-install/user_data"

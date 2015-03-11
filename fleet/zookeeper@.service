@@ -1,0 +1,17 @@
+[Unit]
+Description=zookeeper
+After=docker.service
+Requires=docker.service
+
+[Service]
+ExecStartPre=-/usr/bin/docker kill %p-%i
+ExecStartPre=-/usr/bin/docker rm %p-%i
+ExecStartPre=/usr/bin/docker pull endocode/%p
+ExecStart=/usr/bin/bash -c "ZK_SERVERS=$(/usr/bin/fleetctl list-machines -fields='ip,metadata' -no-legend=true | awk -F'[=\t]' '{print \"server.\"$3\"=\"$1\":2888:3888\"}' | tr '\n' ' ') && exec /usr/bin/docker run --name %p-%i -e JVMFLAGS='-Xmx64m -Xms64M' -e ZK_SERVERS=\"$ZK_SERVERS\" -e ZK_ID=%i --hostname %H --publish 2181:2181 --publish 2888:2888 --publish 3888:3888 endocode/%p"
+ExecStop=/usr/bin/docker stop %p-%i
+TimeoutStartSec=900s
+
+[X-Fleet]
+Conflicts=%p@*.service
+#run zookeeper instance on corresponding host
+MachineMetadata=zookeeperid=%i

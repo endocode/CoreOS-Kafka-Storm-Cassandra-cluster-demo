@@ -1,0 +1,14 @@
+#!/bin/bash
+
+COREOS_CONF="./coreos.inc"
+
+if [[ -f $COREOS_CONF && -r $COREOS_CONF ]]; then
+	. $COREOS_CONF
+fi
+
+if [ -z $ETCD_TOKEN ]; then
+	echo "ETCD_TOKEN is empty"
+	exit 1
+fi
+
+curl -s $ETCD_TOKEN | python -mjson.tool

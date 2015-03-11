@@ -1,0 +1,20 @@
+[Unit]
+Description=cassandra
+After=docker.service
+Requires=docker.service
+
+[Service]
+Environment=CASSANDRA_CLUSTERNAME=cluster CASSANDRA_SSL_STORAGE_PORT=7002
+EnvironmentFile=-/etc/environment
+ExecStartPre=-/usr/bin/docker kill %p-%i
+ExecStartPre=-/usr/bin/docker rm %p-%i
+ExecStartPre=/usr/bin/docker pull endocode/%p
+ExecStartPre=/usr/bin/bash -c "echo $${COREOS_PUBLIC_IPV4:-$$(hostname -i)} | /usr/bin/etcdctl set /cassandra_%i"
+ExecStartPre=/usr/bin/bash -c "while [[ ! $$(/usr/bin/etcdctl get /cassandra_1) ]]; do echo 'Waiting for Cassandra Seed node'; sleep 1; done; echo 'Cassandra Seed node is UP'; /usr/bin/etcdctl get /cassandra_1"
+ExecStart=/usr/bin/bash -c "BROADCAST_ADDR=$${COREOS_PUBLIC_IPV4:-$$(hostname -i)} && CASSANDRA_SEEDS=$(/usr/bin/etcdctl get /cassandra_1 | /usr/bin/tr -d '\n') && exec /usr/bin/docker run --rm --name %p-%i -e CASSANDRA_CLUSTERNAME=${CASSANDRA_CLUSTERNAME} -e CASSANDRA_SEEDS=\"$CASSANDRA_SEEDS\" -e BROADCAST_ADDR=$BROADCAST_ADDR -e CASSANDRA_SSL_STORAGE_PORT=$CASSANDRA_SSL_STORAGE_PORT --publish 7000:7000 --publish $CASSANDRA_SSL_STORAGE_PORT:$CASSANDRA_SSL_STORAGE_PORT --publish 9160:9160 --publish 9042:9042 --publish 7199:7199 endocode/%p"
+ExecStop=/usr/bin/docker stop %p-%i
+ExecStopPost=/usr/bin/etcdctl rm /cassandra_%i
+TimeoutStartSec=900s
+
+[X-Fleet]
+Conflicts=%p@*.service
